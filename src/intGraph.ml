@@ -1,3 +1,4 @@
+(* Laurent Viennot, Inria 2017 *)
 
 (** Basic graph structure where vertices are integers from [0] to [n-1]. 
     First use module LabelSet to create a graph with labeled vertices. *)

@@ -1,4 +1,4 @@
-
+(* Laurent Viennot, Inria 2017 *)
 
 let () =
   Printexc.record_backtrace true ;
@@ -163,6 +163,29 @@ let () =
     Printf.eprintf "# Skeleton width = %d, integr width = %f, skel size = %d\n"
       (Skel.width sk) (Skel.integrated_width sk dij) (Skel.n sk); 
     top "skeleton" ;
+
+    let furthest = Array.init n (fun i -> i) in
+    let dist_furth u = Trav.dist dij (furthest.(u)) in
+    for i = Trav.visit_nb dij - 1 downto 0 do
+      let u = Trav.visit_at dij i in
+      let p = Trav.parent dij u in
+      if Trav.parent_dist dij u + dist_furth u > dist_furth p then
+        furthest.(p) <- furthest.(u);
+    done;
+    for i = 0 to Trav.visit_nb dij - 1 do
+      let u = Trav.visit_at dij i in
+      let p = Trav.parent dij u in
+      if 2 * dist_furth u >= 3 * Trav.dist dij u
+      then assert (Skel.visit_time sk u < n) (* in skeleton *)
+      else begin
+        if 2 * dist_furth u > 3 * Trav.dist dij p (* leaf *)
+        then assert (Skel.visit_time sk u < n
+                     && abs_float ((Skel.dist sk u) -. 2. / 3. *.
+                                     float_of_int (dist_furth u)) < 0.1 )
+        else assert (Skel.visit_time sk u >= n) (* not in skeleton *)
+      end
+    done;
+    top "skeleton verif";
     
     (* Comparison on New York graph (9th DIMACS) :
                    time_adj          iter_edg   mem_edge(10^6) dij    mem

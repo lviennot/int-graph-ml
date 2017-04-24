@@ -1,3 +1,5 @@
+(* Laurent Viennot, Inria 2017 *)
+
 module Make
   (Graph : sig
     type t

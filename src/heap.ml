@@ -1,3 +1,5 @@
+(* Laurent Viennot, Inria 2017 *)
+
 (** Heap implementation in a vector. Minimum gets first out. *)
 module OfArray (A : GenArray.ExpandType)  (E : sig
   type t

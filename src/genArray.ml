@@ -1,3 +1,4 @@
+(* Laurent Viennot, Inria 2017 *)
 
 module type Type = sig
   type t

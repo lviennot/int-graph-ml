@@ -1,3 +1,5 @@
+(* Laurent Viennot, Inria 2017 *)
+
 (** Set of labels that are numbered from [0] to [n-1] as they are inserted. *)
 module Make (LabelArray : GenArray.ExpandType) = struct
 

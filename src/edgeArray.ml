@@ -1,3 +1,5 @@
+(* Laurent Viennot, Inria 2017 *)
+
 module Make
   (IntArr : GenArray.ExpandType with type elt = int)
   (WgtArr : GenArray.ExpandType) :

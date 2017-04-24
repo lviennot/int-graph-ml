@@ -1,22 +1,17 @@
 TARGETS:=test
-MODS:=traverse.ml
+MODS:=traversal.ml
 LIBS:=-lib bigarray
 # -lib str -lib unix
 OPTS:=-cflags -ccopt,-O3
 #  -lib graphics -cflags -I,+lablgtk
 #PACKAGES:=-package ocamlgraph -package batteries
-# -package batteries 
-APIDOC:=IntDigraph Vector Traversal Skeleton Sig Diameter
+APIDOC:=GenArray Heap EdgeArray IntGraph LabelSet Traversal Skeleton
 SRCS:=$(wildcard src/*.ml) $(wildcard src/*.mli)
 
 
 binaries: _tags
 	 ocamlbuild $(OPTS) $(LIBS) $(PACKAGES) $(patsubst %,%.native,$(TARGETS))
 
-test: test.native
-	for s in 1 10 100 1000; do \
-		gunzip -c ../graph/_data/USA-road-t.NY.gr.gz | grep '^a ' | ./test.native $$s > /tmp/o; \
-	done
 
 all: binaries api.doc
 
@@ -60,7 +55,29 @@ clean:
 	rm -f *~ src/*~
 	ocamlbuild -clean
 	rm -fr _build _tags api.odocl mods.top mods.mltop
+	rm -f _data/USA-road-t.NY.gr.gz
 
 
--include viz.make manage.make example.make
+# ------------- test
+
+test: _data/USA-road-t.NY.gr.gz test.native
+	for s in 1 10 100 1000; do \
+		gunzip -c $< | grep '^a ' | ./test.native $$s; \
+	done
+
+_data/USA-road-t.NY.gr.gz:
+	curl -o $@ http://www.dis.uniroma1.it/challenge9/data/USA-road-t/USA-road-t.NY.gr.gz
+
+# -------------- graphviz
+
+GRAPHVIZ:=neato -Ksfdp -Goverlap=scale -Gsplines=curved -Nlabel="" -Earrowhead=none -Nshape=circle -Nstyle=filled -Nwidth=.1 -Ncolor="\#00000060" -Ecolor="\#00000020"
+# -Nstyle=filled -Nheight=1 -Nwidth=1 -Nfixedsize=true
+
+%.pdf: %.dot
+	$(GRAPHVIZ) -o $@ -Tpdf $<
+
+%.svg: %.dot
+	$(GRAPHVIZ) -o $@ -Tsvg $<
+
+
 
