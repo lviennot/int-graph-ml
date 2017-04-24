@@ -13,6 +13,7 @@ You can install ocaml and required modules with opam, something like :
 ```
 apt-get install opam
 opam init --comp 4.04.0
+eval `opam config env`
 ```
 
 Then :
