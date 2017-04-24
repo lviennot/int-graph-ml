@@ -1,8 +1,6 @@
 # int-graph-ml
 Compact graph data-structure in ocaml.
 
-(Author : Laurent Viennot, Inria 2017)
-
 This library provides an ocaml graph implementation with pretty low memory
 usage: a graph with `n` nodes and `m` edges is basically represented with `n+m`
 words. Using bigarrays, unweighted graphs with less than `2^31` nodes can be
