@@ -25,7 +25,7 @@ make
 
 See `src/test.ml` for an example.
 
-Test can be performed with:
+Try it (on New York graph from 9th DIMACS) with:
 ```
 make test
 ```
