@@ -151,6 +151,7 @@ let () =
     for u = 0 to n - 1 do
       let p = Trav.parent dij u and w = Trav.parent_dist dij u in
       assert (Trav.dist dij u = w + Trav.dist dij p);
+      assert (Trav.visit_time dij p < Trav.visit_time dij u || p = u);
     done;
     G.iter (fun u w v ->
       assert (Trav.dist dij v <= w + Trav.dist dij u);
@@ -169,7 +170,7 @@ let () =
     for i = Trav.visit_nb dij - 1 downto 0 do
       let u = Trav.visit_at dij i in
       let p = Trav.parent dij u in
-      if Trav.parent_dist dij u + dist_furth u > dist_furth p then
+      if dist_furth u > dist_furth p then
         furthest.(p) <- furthest.(u);
     done;
     for i = 0 to Trav.visit_nb dij - 1 do
@@ -180,8 +181,8 @@ let () =
       else begin
         if 2 * dist_furth u > 3 * Trav.dist dij p (* leaf *)
         then assert (Skel.visit_time sk u < n
-                     && abs_float ((Skel.dist sk u) -. 2. / 3. *.
-                                     float_of_int (dist_furth u)) < 0.1 )
+                     && abs_float ((Skel.dist sk u) -. 2. /. 3. *.
+                                   float_of_int (dist_furth u)) < 0.001 )
         else assert (Skel.visit_time sk u >= n) (* not in skeleton *)
       end
     done;

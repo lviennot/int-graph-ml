@@ -1,5 +1,7 @@
 (* Laurent Viennot, Inria 2017 *)
 
+(** Generic module for arrays (standard Array or Bigarray). *)
+
 module type Type = sig
   type t
   type elt
@@ -19,6 +21,7 @@ module type ExpandType = sig
       [len - 1] set to [dft]. Array [a] can be destroyed or reused and
       is not accessed after. *)
   val expand : t -> int -> elt -> t
+
 end
 
 module MakeExpand (A : Type) : ExpandType with type elt = A.elt

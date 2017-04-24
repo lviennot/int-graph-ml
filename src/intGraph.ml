@@ -2,6 +2,7 @@
 
 (** Basic graph structure where vertices are integers from [0] to [n-1]. 
     First use module LabelSet to create a graph with labeled vertices. *)
+
 module Make
   (IntArr : GenArray.ExpandType with type elt = int)
   (LongIntArray : GenArray.ExpandType with type elt = int)

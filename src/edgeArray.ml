@@ -1,5 +1,7 @@
 (* Laurent Viennot, Inria 2017 *)
 
+(** A graph as an array of edges. *)
+
 module Make
   (IntArr : GenArray.ExpandType with type elt = int)
   (WgtArr : GenArray.ExpandType) :

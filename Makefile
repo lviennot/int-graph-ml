@@ -13,7 +13,7 @@ binaries: _tags
 	 ocamlbuild $(OPTS) $(LIBS) $(PACKAGES) $(patsubst %,%.native,$(TARGETS))
 
 
-all: binaries api.doc
+all: binaries api.docdir
 
 
 .PHONY: _tags
@@ -41,31 +41,31 @@ ocaml:
 
 
 
-.PHONY: api.doc
+.PHONY: api.docdir
 
-api.doc: 
+api.docdir: 
 	rm -f $@ api.odocl
 	for m in $(APIDOC) ; do echo $$m >> api.odocl ; done
 	ocamlbuild -docflags -charset,UTF-8,-colorize-code,-html,-short-functors $(LIBS) $(PACKAGES) api.docdir/index.html
 	rm -f api.odocl
-	mv api.docdir $@
 
 
 clean:
 	rm -f *~ src/*~
 	ocamlbuild -clean
 	rm -fr _build _tags api.odocl mods.top mods.mltop
-	rm -f _data/USA-road-t.NY.gr.gz
+	rm -fr _data
 
 
 # ------------- test
 
 test: _data/USA-road-t.NY.gr.gz test.native
-	for s in 1 10 100 1000; do \
+	for s in 1 12 103 1004 10005 100006; do \
 		gunzip -c $< | grep '^a ' | ./test.native $$s; \
 	done
 
 _data/USA-road-t.NY.gr.gz:
+	mkdir -p _data
 	curl -o $@ http://www.dis.uniroma1.it/challenge9/data/USA-road-t/USA-road-t.NY.gr.gz
 
 # -------------- graphviz

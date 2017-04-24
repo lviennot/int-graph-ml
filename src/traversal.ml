@@ -1,5 +1,7 @@
 (* Laurent Viennot, Inria 2017 *)
 
+(** Dijkstra traversal of a graph. *)
+
 module Make
   (Graph : sig
     type t

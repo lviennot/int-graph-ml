@@ -64,23 +64,20 @@ module Make (Traversal : sig
         if i = last_visit_nb then 0.
         else t.dist.(p) +. edge_metric p (T.parent_dist trav u) u
     done;
-    let dist_par u = t.dist.(u) -. t.dist.(T.parent trav u) in
     
     (* The reach of [u] is the distance from [u] to the furthest 
        descendant of [u]. *)
-    let dist_furth u = t.dist.(t.furthest.(u)) -. t.dist.(u) in
+    let dist_furth u = t.dist.(t.furthest.(u)) in
     for i = n_tree - 1 downto last_visit_nb + 1 do
       let u = T.visit_at trav i in
       let p = T.parent trav u in
-      if (dist_par u) +. (dist_furth u) > (dist_furth p) then
+      if dist_furth u > dist_furth p then
         t.furthest.(p) <- t.furthest.(u);
     done;
 
     (* The sekeleton is made of edges p-->u with sufficient reach. *)
     let long_reach u =
-      (* Buggy since we modify t.dist :
-         dist_par u +. dist_furth u > alpha *. t.dist.(T.parent trav u) *)
-      t.dist.(t.furthest.(u)) > (1. +. alpha) *. t.dist.(T.parent trav u)
+      dist_furth u > (1. +. alpha) *. t.dist.(T.parent trav u)
     in
     let visit_at = Array.make n_tree no_vertex and n_skel = ref 0 in
     let add u =
@@ -93,8 +90,8 @@ module Make (Traversal : sig
       let u = T.visit_at trav i in
       if long_reach u  then begin
         add u;
-        let d_prune = (t.dist.(u) +. dist_furth u) /. (1. +. alpha) in
-        t.dist.(u) <- min t.dist.(u) d_prune;
+        let d_prune = dist_furth u /. (1. +. alpha) in
+        if d_prune < t.dist.(u) then t.dist.(u) <- d_prune;
         let p = T.parent trav u in
         t.nsons.(p) <- t.nsons.(p) + 1;
       end
