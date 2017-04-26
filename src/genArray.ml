@@ -47,7 +47,9 @@ module OfArray (Elt : sig type t end) = struct
   let blit = Array.blit
 end
 
-module OfInt =  MakeExpand (OfArray(struct type t = int end))
+module MakeOf (Elt : sig type t end) = MakeExpand (OfArray (Elt))
+
+module OfInt =  MakeOf (struct type t = int end)
 
 module OfInt32 = struct 
   module B = Bigarray
@@ -136,7 +138,7 @@ end
   
 module QueueOf (E : sig
   type t
-end)  = Queue (MakeExpand (OfArray (E)))
+end)  = Queue (MakeOf (E))
 
 
 (** Stack in an array. *)
@@ -172,4 +174,4 @@ end
 
 module StackOf (E : sig
     type t
-end)  = Stack (MakeExpand (OfArray (E)))
+end)  = Stack (MakeOf (E))
