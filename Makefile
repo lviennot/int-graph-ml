@@ -1,5 +1,5 @@
-TARGETS:=test
-MODS:=traversal.ml
+TARGETS:=test gtfsTest
+MODS:=GenArray Heap EdgeArray IntGraph LabelSet Skeleton Traversal Rows Gtfs
 LIBS:=-lib bigarray
 # -lib str -lib unix
 OPTS:=-cflags -ccopt,-O3
@@ -15,11 +15,10 @@ binaries: _tags
 
 all: binaries api.docdir
 
-
 .PHONY: _tags
 
 _tags:
-	(echo "true:      inline(3)" ; echo "true:       debug" ; echo "<src>:      include") > _tags
+	(echo "true:      inline(0)" ; echo "true:       debug" ; echo "<src> or <src/gtfs>:      include") > _tags
 
 %.native: _tags $(SRCS)
 	ocamlbuild $(OPTS) $(LIBS) $(PACKAGES) $@
@@ -27,13 +26,24 @@ _tags:
 unit: _tags $(SRCS)
 	ocamlbuild $(LIBS) $(PACKAGES) unit.native --
 
+_tags0:
+	(echo "true:      inline(0)" ; echo "true:       debug" ; echo "<src> or <src/gtfs>:      include") > _tags
 
-mods.cma: $(patsubst %,src/%,$(MODS))
-	echo $(patsubst %,src/%,$(MODS)) > mods.mllib
+byte: _tags0
+	 ocamlbuild $(OPTS) $(LIBS) $(PACKAGES) $(patsubst %,%.byte,$(TARGETS))
+%.byte: _tags $(SRCS)
+	ocamlbuild $(OPTS) $(LIBS) $(PACKAGES) $@
+
+
+mods.cma: $(SRCS)
+	echo $(MODS) > mods.mllib
 	ocamlbuild $(LIBS) $(PACKAGES) $@
 
-mods.top: $(patsubst %,_src/%,$(MODS))
-	echo $(patsubst %,_build/src/%,$(MODS)) > mods.mltop
+mods.info:
+	ocamlobjinfo _build/mods.cma
+
+mods.top: $(SRCS)
+	echo $(MODS) > mods.mltop
 	ocamlbuild $(LIBS) $(PACKAGES) $@
 
 ocaml:
@@ -51,9 +61,10 @@ api.docdir:
 
 
 clean:
-	rm -f *~ src/*~
+	rm -f *~ src/*~ src/gtfs/*~
 	ocamlbuild -clean
-	rm -fr _build _tags api.odocl mods.top mods.mltop
+	rm -f *.native
+	rm -fr _build _tags api.odocl mods.top mods.mltop mods.mllib
 	rm -fr _data
 
 
@@ -68,6 +79,7 @@ _data/USA-road-t.NY.gr.gz:
 	mkdir -p _data
 	curl -o $@ http://www.dis.uniroma1.it/challenge9/data/USA-road-t/USA-road-t.NY.gr.gz
 
+
 # -------------- graphviz
 
 GRAPHVIZ:=neato -Ksfdp -Goverlap=scale -Gsplines=curved -Nlabel="" -Earrowhead=none -Nshape=circle -Nstyle=filled -Nwidth=.1 -Ncolor="\#00000060" -Ecolor="\#00000020"
@@ -80,4 +92,13 @@ GRAPHVIZ:=neato -Ksfdp -Goverlap=scale -Gsplines=curved -Nlabel="" -Earrowhead=n
 	$(GRAPHVIZ) -o $@ -Tsvg $<
 
 
+# --------------- GTFS
 
+gtfs: /tmp/_gtfs_stif gtfsTest.native
+	./gtfsTest.native $< 20170606
+
+/tmp/_gtfs_stif:
+	mkdir -p $@
+	curl -o /tmp/stif.zip https://opendata.stif.info/explore/dataset/offre-horaires-tc-gtfs-idf/files/f24cf9dbf6f80c28b8edfdd99ea16aad/download/
+	cd $@ ; unzip /tmp/stif.zip
+	rm -f /tmp/stif.zip

@@ -142,9 +142,9 @@ let () =
     let dij = Trav.create n in
     top "dij create" ;
     
-    let nq = Trav.dijkstra dij g [s] in
+    let nvis = Trav.dijkstra dij g [s] in
     let d = Trav.dist dij t in
-    Printf.eprintf "# Dijkstra enqueues : %d d(%d, %d) = %d\n" nq
+    Printf.eprintf "# Dijkstra nvis : %d d(%d, %d) = %d\n" nvis
       (lab s) (lab t) d ; 
     top "dijkstra" ;
 

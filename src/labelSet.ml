@@ -30,10 +30,14 @@ module Make (LabelArray : GenArray.ExpandType) = struct
       t.n <- t.n + 1 ;
       i
 
+  let mem t u = Hashtbl.mem t.ltoi u
+      
   let n t = t.n
     
   let index t u = Hashtbl.find t.ltoi u
 
   let label t i = LabArr.get t.itol i
-    
+
+  let all_labels t = t.itol
+                
 end

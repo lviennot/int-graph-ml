@@ -24,7 +24,8 @@ module type ExpandType = sig
 
 end
 
-module MakeExpand (A : Type) : ExpandType with type elt = A.elt
+module MakeExpand (A : Type) : ExpandType
+       with type elt = A.elt and type t = A.t
   = struct
   include A
   let expand a len dft =
@@ -88,14 +89,14 @@ module Uniform (E : sig type t val elt : t end) = struct
   let make _ _ = ()
   let create _ = ()
   let length _ = max_int
-  let set _ _ _ = ()
+  let set _ _ e = assert (e = E.elt)
   let get _ _ = unique_val
   let blit _ _ _ _ _ = ()
   let expand a _ _ = a
 end
 
 module OfOne = Uniform (struct type t = int let elt = 1 end)
-  
+
 
 (** Queue in an array. *)
 module Queue (A : ExpandType) = struct
@@ -155,6 +156,8 @@ module Stack (A : ExpandType) = struct
 
   let add t e = 
     t.back <- t.back + 1 ;
+    if t.back >= A.length t.v then
+      t.v <- A.expand t.v (t.back + 1) e ;
     A.set t.v t.back e 
 
   let push = add
@@ -175,3 +178,32 @@ end
 module StackOf (E : sig
     type t
 end)  = Stack (MakeOf (E))
+
+
+(** Dichotomic search of [v] in [a] between [l] (inclusive) 
+      and [r] (exclusive). If [v] is present, returns the largest index
+      associated to [v]. *)
+module Dicho (A : Type) = struct
+  type res = At of int | After of int | All_smaller | All_bigger | Empty
+  let bsearch cmp a l0 r0 v =
+    if l0 >= r0 then Empty else begin
+        let l = ref l0 and r = ref r0 in
+        while !l + 1 < !r do
+          let m = (!l + !r) / 2 in (* l+1 <= m <= r-1 *)
+          let v' = A.get a m in
+          let c = cmp v v' in
+          if c < 0 then r := m (* on the left, gives r >= l+1 *)
+          else if c > 0 then l := m+1 (* on the right, only case produc. l>=r *)
+          else l := m (* found, need rightmost *)
+        done ;
+        (* We have l0 <= l <= r <= r0 and l >= r-1 and l0 < r,
+           implying l = r-1 or l = r *)
+        let l = !l in
+        if l >= r0 then All_smaller
+        else
+          let c = cmp v (A.get a l) in
+          if c < 0 then (if l > l0 then After (l - 1) else All_bigger)
+          else if c > 0 then (if l+1 < r0 then After l else All_smaller)
+          else At l
+      end
+end

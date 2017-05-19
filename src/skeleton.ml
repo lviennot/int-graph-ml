@@ -20,7 +20,9 @@ module Make (Traversal : sig
             (W : sig
                type t
                val to_float : t -> float
-             end with type t = Traversal.weight) = struct
+            end with type t = Traversal.weight)
+  =
+struct
 
   module T = Traversal
 
@@ -126,4 +128,14 @@ module Make (Traversal : sig
     done;
     !sw
       
+end (* Make *)
+
+
+module IntWeight = struct
+  type t = int
+  let to_float = float_of_int
+  let zero = 0
+  let infinity = max_int
+  let add = (+)
+  let compare w w' = w - w'
 end

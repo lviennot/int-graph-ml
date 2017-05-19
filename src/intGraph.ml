@@ -128,35 +128,8 @@ end with type weight = WgtArr.elt = struct
     let rev = of_edges ~n_estim (fun f -> iter (fun u w v -> f v w u)) in
     reverse rev (* reverse is equivalent to bucket sorting *)
 
-  (** Dichotomic search of [v] in [a] between [l] (inclusive) 
-      and [r] (exclusive). If [v] is present, returns the largest index
-      associated to [v]. *)
-  module Dicho (A : GenArray.Type) = struct
-    type res = At of int | After of int | All_smaller | All_bigger | Empty
-    let bsearch cmp a l0 r0 v =
-      if l0 >= r0 then Empty else begin
-        let l = ref l0 and r = ref r0 in
-        while !l + 1 < !r do
-          let m = (!l + !r) / 2 in (* l+1 <= m <= r-1 *)
-          let v' = A.get a m in
-          let c = cmp v v' in
-          if c < 0 then r := m (* on the left, gives r >= l+1 *)
-          else if c > 0 then l := m+1 (* on the right, only case produc. l>=r *)
-          else l := m (* found, need rightmost *)
-        done ;
-        (* We have l0 <= l <= r <= r0 and l >= r-1 and l0 < r,
-           implying l = r-1 or l = r *)
-        let l = !l in
-        if l >= r0 then All_smaller
-        else
-          let c = cmp v (A.get a l) in
-          if c < 0 then (if l > l0 then After (l - 1) else All_bigger)
-          else if c > 0 then (if l+1 < r0 then After l else All_smaller)
-          else At l
-      end
-  end
 
-  module IDicho = Dicho (I)
+  module IDicho = GenArray.Dicho (I)
     
   let find_edge g u v =
     if not g.sorted then
@@ -185,7 +158,7 @@ end with type weight = WgtArr.elt = struct
     done
 
       
-  module LDicho = Dicho (L)
+  module LDicho = GenArray.Dicho (L)
   let edg_cmp e e' = e - e'
     
   let edge_src g e =
