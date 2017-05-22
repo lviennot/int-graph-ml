@@ -102,5 +102,10 @@ rule token = parse
     close_in tin;
     cols, rows
 
+  let time_of_string s =
+    let lex = Lexing.from_string s in
+    match token lex with
+    | Cell (Time t) -> t
+    | _ -> failwith "Rows: time expected"
 
 }

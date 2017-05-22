@@ -14,8 +14,8 @@ let () =
 
     let gtfs_dir = Sys.argv.(1) in
     let day_date = int_of_string Sys.argv.(2) in
-    let (conn, lst, transf, ls) as gtfs = Gtfs.to_graphs gtfs_dir day_date in
-    top "gtfs read";
+    let t_from = Rows.time_of_string Sys.argv.(3) in
+    let t_to = Rows.time_of_string Sys.argv.(4) in
     
     let module G = Gtfs.G in
     let module EG = Gtfs.EG in
@@ -24,6 +24,11 @@ let () =
     let module R = Rows in
     let module Trav =
           Traversal.Make (G) (GenArray.OfInt) (Traversal.IntWeight) in
+    
+    let (conn, lst, transf, ls, edge_trip) as gtfs =
+      Gtfs.to_graphs gtfs_dir day_date t_from t_to in
+    top "gtfs read";
+
     (*let svtx u =
       let s,t = LST.label lst u in
       Printf.sprintf "%d = %d,%s" u s (R.cell_to_string (R.Time t))
@@ -39,12 +44,13 @@ let () =
       (List.fold_left max 0 ccs);
     top "transfer connected components";
     
-    let g = Gtfs.time_expanded_graph gtfs in
+    let g, trf_edges = Gtfs.time_expanded_graph gtfs in
     Printf.eprintf "Time expanded graph : n = %d m = %d\n" (G.n g) (G.m g);
     top "time expanded graph";
     
     let dij = Trav.create (G.n g) in
     let arr = Array.make (LS.n ls) max_int in
+    let by_trp = Array.make (LS.n ls) "" in
     let nedg = ref 0 and tmax = ref 0 in
     let clear () =
       let nvis = Trav.visit_nb dij in
@@ -56,13 +62,18 @@ let () =
       nedg := 0; tmax := 0;
       Trav.clear dij;
     in
-    let filter _ _ _ v dt _ =
+    let filter u _ _ v dt _ =
       incr nedg;
-      let s, tv = LST.label lst v in
-      let is = LS.index ls s in
-      if dt > !tmax then tmax := dt;
-      let follow = tv < arr.(is) in
-      if follow then arr.(is) <- tv;
+      let trp = try Hashtbl.find edge_trip (u, v) with Not_found -> "" in
+      let (* su, tu = LST.label lst v and *) sv, tv = LST.label lst v in
+      let (* iu = LS.index ls su and *) iv = LS.index ls sv in
+      let follow =
+        tv < arr.(iv)
+        (*&& (trp = "" || by_trp.(iu) = "" || trp = by_trp.(iu)
+            || tv >= tu + 1)*)
+      in
+      if follow then
+        (arr.(iv) <- tv; by_trp.(iv) <- trp; if dt > !tmax then tmax := dt);
       follow
     in
     for _ = 1 to 10 do
@@ -93,11 +104,24 @@ let () =
     let n_iter = 10 in
     let st_tms = Gtfs.stop_times lst ls in
     let all_path_nb = ref 0 and all_wgt_path_nb = ref 0 in
+    let all_trf_pat_nb = ref 0 in
     for _ = 1 to n_iter do
       let src =  Random.int (LST.n lst) and dst = Random.int (LST.n lst) in
       let path_sum = ref 0 and uniq_sum = ref 0 and n_path = ref 0 in
       let h_path = Hashtbl.create 16 and ht_path = Hashtbl.create 16 in
+      let trf_pat = Hashtbl.create 16 and trf_pat_sum = ref 0 in
       let station_of u = LST.label lst u |> fst in
+      let rec transfers acc epath =
+        match epath with
+        | [] -> acc
+        | (u, _, v) :: epath ->
+           let acc =
+             if Hashtbl.mem trf_edges (u, v) then
+               let s = station_of u and s' = station_of v in (s, s') :: acc
+             else acc
+           in
+           transfers acc epath
+      in
       let s = station_of src and d = station_of dst in
       let is = LS.index ls s and id = LS.index ls d in
       let edges = Hashtbl.create 15000 and lprof = LS.create () in
@@ -116,6 +140,9 @@ let () =
             uniq_sum := !uniq_sum + List.length path - 1;
           Hashtbl.replace h_path path ();
           let path = Trav.edge_path dij du in
+          let pat = transfers [] path in
+          Hashtbl.replace trf_pat pat ();
+          trf_pat_sum := !trf_pat_sum + (List.length pat);
           let path =
             List.map (fun (u, w, v) -> station_of u, w, station_of v) path in
           path_sum := !path_sum + List.length path;
@@ -131,18 +158,25 @@ let () =
         clear ();
       done;
       let gprof = G.of_edges ~n_estim:(Hashtbl.length edges)
-        (fun f -> Hashtbl.iter (fun (s, s') dt -> f s dt s') edges) in 
-      Printf.eprintf "  %s->%s union n=%d m=%d, path_len: sum=%d avg=%d \
-                      n_paths: unw=%d wgt=%d\n"
-                     s d (G.n gprof) (G.m gprof)
-                     !uniq_sum (!path_sum / (max 1 !n_path))
-                     (Hashtbl.length h_path) (Hashtbl.length ht_path);
+          (fun f -> Hashtbl.iter (fun (s, s') dt -> f s dt s') edges) in 
+      Printf.eprintf
+        "  %s->%s union n=%d m=%d, path_len: sum=%d avg=%d pat=%d \
+            n_paths: unw=%d wgt=%d trfpat=%d n=%d\n"
+        s d (G.n gprof) (G.m gprof)
+        !uniq_sum (!path_sum / max 1 !n_path) (!trf_pat_sum / max 1 !n_path)
+        (Hashtbl.length h_path) (Hashtbl.length ht_path)
+        (Hashtbl.length trf_pat) (!n_path);
       flush stderr;
-      all_path_nb := !all_path_nb + (Hashtbl.length h_path);
-      all_wgt_path_nb := !all_wgt_path_nb + (Hashtbl.length ht_path);
+      if !n_path > 0 then begin
+          all_path_nb := !all_path_nb + (Hashtbl.length h_path);
+          all_wgt_path_nb := !all_wgt_path_nb + (Hashtbl.length ht_path);
+          all_trf_pat_nb := !all_trf_pat_nb + (Hashtbl.length trf_pat);
+        end;
     done;
-    Printf.printf "avg_nb_path = %d  avg_nb_wgt_path = %d\n"
-                  (!all_path_nb / n_iter) (!all_wgt_path_nb / n_iter);
+    Printf.printf
+      "avg_nb_path = %d  avg_nb_wgt_path = %d avg_nb_trf_pat = %d\n"
+      (!all_path_nb / n_iter) (!all_wgt_path_nb / n_iter)
+      (!all_trf_pat_nb / n_iter);
     top "profile";
     
     ()

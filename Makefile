@@ -94,8 +94,14 @@ GRAPHVIZ:=neato -Ksfdp -Goverlap=scale -Gsplines=curved -Nlabel="" -Earrowhead=n
 
 # --------------- GTFS
 
+T1:=$(if $(T1),$(T1),07:00:00)
+T2:=$(if $(T2),$(T2),11:00:00)
+
 gtfs: /tmp/_gtfs_stif gtfsTest.native
-	./gtfsTest.native $< 20170606
+	./gtfsTest.native $< 20170606 $(T1) $(T2)
+
+gtfs_ratp: ../../dev/ratp/_gtfs_ratp gtfsTest.native
+	./gtfsTest.native $< 20170606  $(T1) $(T2)
 
 /tmp/_gtfs_stif:
 	mkdir -p $@

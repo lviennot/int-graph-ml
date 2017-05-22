@@ -14,7 +14,8 @@ sig
   val n : t -> int
   val m : t -> int
   val iter : (vertex -> weight -> vertex -> unit) -> t -> unit
-  val edge : t -> int -> (vertex * weight * vertex)
+  type edge = int
+  val edge : t -> edge -> (vertex * weight * vertex)
   val no_vertex : vertex
 end with type weight = WgtArr.elt = struct
 
@@ -22,6 +23,7 @@ end with type weight = WgtArr.elt = struct
   module W = WgtArr
 
   type vertex = int
+  type edge = int
   type weight = W.elt
     
   type t = {

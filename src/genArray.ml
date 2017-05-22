@@ -180,6 +180,81 @@ module StackOf (E : sig
 end)  = Stack (MakeOf (E))
 
 
+(* More compact hashtables ?
+ Cuckoo hashing table with external collision detection.
+    Usage example : you have a growing array elements and when to test
+    if an element is already present. You can then associate an element to
+    its index.
+    The result is more compact than a usual hashtabl and elements can still
+    be scanned very efficiently.
+ 
+module HashsetOf
+         (A : Type)
+         (E : sig type t val never_used : t end with type t = A.elt)
+  = struct
+
+  type elt = E.t
+  let never_used = E.never_used
+                 
+  type 'a t = {
+      mutable v : A.t;
+      hash : elt -> int;
+      mutable n : int;
+    }
+
+  let create hash n_estim = { v = A.create n_estim; hash; n = 0; }
+
+  let hash prime t e =
+    let h = (prime * t.hash e) mod (A.length t.v) in
+    if h >= 0 then h else h + A.length t.v
+
+  let hash1 = hash 1
+  let hash2 = hash 12347
+
+  let mem t hsh =
+    A.get t.v (hash1 t e) = e || A.get t.v (hash2 t e) = e
+
+  let find t hsh =
+    
+    A.get t.v hsh = e || A.get t.v hsh = e
+
+  let max_depth = ref 0
+                          
+  let rec add dpt t e =
+    if dpt > !max_depth then max_depth := dpt;
+    let h1 = hash1 t e in
+    if A.get t.v h1 = never_used then A.set t.v h1 e
+    else begin
+        let h2 = hash2 t e in
+        if A.get t.v h2 = never_used then A.set t.v h2 e
+        else begin
+            let h = if Random.int 2 = 0 then h1 else h2 in
+            let e' = A.get t.v h in
+            A.set t.v h e; (* the cuckoo takes the nest of the other bird *)
+            add (dpt+1) t e' (* who is now the cuckoo *)
+          end
+      end
+                           
+  let add t e =
+    (* ensure sufficiently many empty nests : *)
+    if 4 * t.n > 3 * (A.length t.v) then begin
+        let v = t.v in
+        t.v <- A.create (2 * (A.length v));
+        for i = 0 to A.length v - 1 do
+          let e = A.get v i in
+          if e <> never_used then add 0 t e
+        done
+      end;
+    add 0 t e;
+    t.n <- t.n + 1
+
+end
+
+module IntHashset =
+  HashsetOf (OfInt) (struct type t = int let never_used = min_int end)
+ *)
+
+
 (** Dichotomic search of [v] in [a] between [l] (inclusive) 
       and [r] (exclusive). If [v] is present, returns the largest index
       associated to [v]. *)

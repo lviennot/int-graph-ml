@@ -1,5 +1,8 @@
 (* Laurent Viennot, Inria 2017 *)
 
+(** Construct graphs from General Transit Feed Specification (GTFS) files.
+    See https://developers.google.com/transit/gtfs/reference/ *)
+
 module R = Rows
 module StopArray = GenArray.MakeOf(struct type t = string end)
 module LS = LabelSet.Make (StopArray) (* stops *)
@@ -15,24 +18,55 @@ let date_of_day i = (* format : yyyymmdd, ex : 20170611 *)
   let d = i - m * 100 in
   y, m, d
 
+type col_type = Ident | Int | Float | Time
+
+let string_of_col_type = function
+  | Ident -> "Ident" | Int -> "Int" | Float -> "Float" | Time -> "Time"
+
+let row_select first_row sel =
+  let cells = Array.make (List.length sel) R.Empty in
+  let to_sel = Array.make (List.length first_row) (-1, "", Ident) in
+  let id c = match c with R.Ident s -> s | _ -> assert false in
+  let cols = List.mapi (fun i c -> id c, i) first_row in
+  List.iteri (fun i (typ, c) -> to_sel.(List.assoc c cols) <- i, c, typ) sel;
+  fun row ->
+  let n = ref 0 in
+  List.iteri (fun i cell ->
+      let j, col, typ = to_sel.(i) in
+      if j >= 0 then begin
+          incr n;
+          cells.(j) <-
+            match typ, cell with
+            | Ident, R.Ident _ -> cell
+            | Ident, R.Int i -> R.Ident (string_of_int i)
+            | Ident, R.Float f -> R.Ident (string_of_float f)
+            | Int, R.Int _ -> cell
+            | Int, R.Empty -> R.Int 0
+            | Float, R.Float _ -> cell
+            | Time, R.Time _ -> cell
+            | _ -> failwith (Printf.sprintf "Gtfs: bad %s cell (%s) : %s"
+                           col (string_of_col_type typ) (R.cell_to_string cell))
+        end
+    ) row;
+  if !n <> Array.length cells then failwith "Gtfs: Wrong number of cells.";
+  Array.to_list cells
   
-  
-let to_graphs gtfs_dir day_date =
+let to_graphs gtfs_dir day_date t_from t_to =
 
   let wrong_row r = R.fprint_row stderr r; failwith "wrong row" in
 
   let services = Hashtbl.create 16 in
   let cols, rows = R.read gtfs_dir "calendar.txt" in
-  assert (cols = [R.Ident "service_id";
-                  R.Ident "monday";
-                  R.Ident "tuesday";
-                  R.Ident "wednesday";
-                  R.Ident "thursday";
-                  R.Ident "friday";
-                  R.Ident "saturday";
-                  R.Ident "sunday";
-                  R.Ident "start_date";
-                  R.Ident "end_date"]);
+  let read_row = row_select cols [ Ident, "service_id";
+                                   Int, "monday";
+                                   Int, "tuesday";
+                                   Int, "wednesday";
+                                   Int, "thursday";
+                                   Int, "friday";
+                                   Int, "saturday";
+                                   Int, "sunday";
+                                   Int, "start_date";
+                                   Int, "end_date"] in
   let d_cmp i i' = compare (date_of_day i) (date_of_day i') in
   (* week day computation *)
   let y, m, d = date_of_day day_date in
@@ -49,8 +83,8 @@ let to_graphs gtfs_dir day_date =
   Printf.eprintf "week day : %d (0 for monday, 1 for tuesday, ...)\n" wday;
   (* rows : *)
   List.iter (fun r ->
-    match r with
-      | [R.Int srv;
+    match read_row r with
+      | [R.Ident srv;
          R.Int mon; R.Int tue; R.Int wed; R.Int thu;
          R.Int fri; R.Int sat; R.Int sun;
          R.Int d_start; R.Int d_end;] ->
@@ -62,12 +96,12 @@ let to_graphs gtfs_dir day_date =
   ) rows;
   (* exceptions : *)
   let cols, rows = R.read gtfs_dir "calendar_dates.txt" in
-  assert (cols = [R.Ident "service_id";
-                  R.Ident "date";
-                  R.Ident "exception_type"]);
+  let read_row = row_select cols [Ident, "service_id";
+                                  Int, "date";
+                                  Int, "exception_type"] in
   List.iter (fun r ->
-    match r with
-      | [R.Int srv; R.Int d; R.Int exc] ->
+    match read_row r with
+      | [R.Ident srv; R.Int d; R.Int exc] ->
         if d = day_date then begin
           if exc = 1 then Hashtbl.add services srv ()
           else if exc = 2 then Hashtbl.remove services srv
@@ -78,134 +112,89 @@ let to_graphs gtfs_dir day_date =
 
   let trips = Hashtbl.create 16 in
   let cols, rows = R.read gtfs_dir "trips.txt" in
-  if cols = [R.Ident "route_id";
-             R.Ident "service_id";
-             R.Ident "trip_id";
-             R.Ident "trip_headsign";
-             R.Ident "trip_short_name";
-             R.Ident "direction_id";
-             R.Ident "shape_id"] (* ratp *)
-  then begin
-    List.iter (fun r ->
-      match r with
-        | [R.Int rte; R.Int srv; R.Int trp; _; _; R.Int dir; _] ->
-          if Hashtbl.mem services srv then
-            Hashtbl.add trips (string_of_int trp) (string_of_int rte, srv, dir)
-        | r -> wrong_row r
+  let read_row = row_select cols [Ident, "route_id";
+                                  Ident, "service_id";
+                                  Ident, "trip_id";
+                                  Int, "direction_id"] in
+  List.iter (fun r ->
+      match read_row r with
+      | [R.Ident rte; R.Ident srv; R.Ident trp; R.Int dir;] ->
+         if Hashtbl.mem services srv then
+           Hashtbl.add trips trp (rte, srv, dir)
+      | r -> wrong_row r
     ) rows;
-  end else begin
-    assert (cols = [R.Ident "route_id";
-             R.Ident "service_id";
-             R.Ident "trip_id";
-             R.Ident "trip_headsign";
-             R.Ident "direction_id";
-             R.Ident "block_id";]); (* stif *)
-    List.iter (fun r ->
-      match r with
-        | [R.Ident rte; R.Int srv; R.Ident trp; _; R.Int dir; _] ->
-          if Hashtbl.mem services srv then
-            Hashtbl.add trips trp (rte, srv, dir)
-        | r -> wrong_row r
-    ) rows;
-  end;
   Printf.eprintf "%d trips\n" (Hashtbl.length trips); flush stderr;
 
   let trf_ls = LS.create () in 
   let cols, rows = R.read gtfs_dir "stops.txt" in
-  if cols = [R.Ident "stop_id";
-             R.Ident "stop_code";
-             R.Ident "stop_name";
-             R.Ident "stop_desc";
-             R.Ident "stop_lat";
-             R.Ident "stop_lon";
-             R.Ident "location_type";
-             R.Ident "parent_station";] (* ratp *)
-  then begin
-    List.iter (fun r ->
-      match r with
-        | [R.Int s; _; _; _; _; _; _; _] ->
-          ignore (LS.add trf_ls (string_of_int s))
+  let read_row = row_select cols [Ident, "stop_id"] in
+  List.iter (fun r ->
+      match read_row r with
+        | [R.Ident s;] ->
+          ignore (LS.add trf_ls s)
         | r -> wrong_row r
     ) rows;
-  end else begin
-    assert (cols = [R.Ident "stop_id";
-             R.Ident "stop_name";
-             R.Ident "stop_desc";
-             R.Ident "stop_lat";
-             R.Ident "stop_lon";
-             R.Ident "zone_id";
-             R.Ident "stop_url";
-             R.Ident "location_type";
-             R.Ident "parent_station";]); (* stif *)
-    List.iter (fun r ->
-      match r with
-        | [R.Ident s; _; _; _; _; _; _; _; _] -> ignore (LS.add trf_ls s)
-        | r -> wrong_row r
-    ) rows;
-  end;
   Printf.eprintf "stops: n = %d\n" (LS.n trf_ls);
   flush stderr;
   
   let trf_eg = EG.create () in
+  let trf_edges = Hashtbl.create 10000 in
   let cols, rows = R.read gtfs_dir "transfers.txt" in
-  assert (cols = [R.Ident "from_stop_id";
-                  R.Ident "to_stop_id";
-                  R.Ident "transfer_type";
-                  R.Ident "min_transfer_time";]);
-  let str = string_of_int in
+  let read_row = row_select cols [Ident, "from_stop_id";
+                                  Ident, "to_stop_id";
+                                  Int, "transfer_type";
+                                  Int, "min_transfer_time";] in
   List.iter (fun r ->
-    match r with
-      | [R.Ident tl; R.Ident hd; R.Int typ; R.Int tm;] ->
-        EG.add trf_eg (LS.add trf_ls tl) 1 (LS.add trf_ls hd);
-        EG.add trf_eg (LS.add trf_ls hd) 1 (LS.add trf_ls tl);
-      | [R.Int tl; R.Int hd; R.Int typ; R.Int tm;] ->
-        EG.add trf_eg (LS.add trf_ls (str tl)) 1 (LS.add trf_ls (str hd));
-        EG.add trf_eg (LS.add trf_ls (str hd)) 1 (LS.add trf_ls (str tl));
-      | r -> wrong_row r
-  ) rows;
+    match read_row r with
+    | [R.Ident tl; R.Ident hd; R.Int typ; R.Int tm;] ->
+       let tm = if typ = 1 then 0 else tm in
+       if typ <> 3 then begin
+           let s = LS.add trf_ls tl and s' = LS.add trf_ls hd in
+           EG.add trf_eg s tm s';
+           Hashtbl.add trf_edges (s, s') tm;
+         end
+    | r -> wrong_row r
+    ) rows;
+  EG.iter (fun s tm s' ->
+      if not (Hashtbl.mem trf_edges (s', s)) then EG.add trf_eg s' tm s
+    ) trf_eg;
   Printf.eprintf "transfer graph: n = %d  m = %d\n" (LS.n trf_ls) (EG.m trf_eg);
   flush stderr;
   
   let trip_stops = Hashtbl.create 16 in
   let cols, rows = R.read gtfs_dir "stop_times.txt" in
-  assert (cols = [R.Ident "trip_id";
-                  R.Ident "arrival_time";
-                  R.Ident "departure_time";
-                  R.Ident "stop_id";
-                  R.Ident "stop_sequence";
-                  R.Ident "stop_headsign";
-                  R.Ident "shape_dist_traveled"] (* ratp *)
-         || cols = [R.Ident "trip_id";
-                    R.Ident "arrival_time";
-                    R.Ident "departure_time";
-                    R.Ident "stop_id";
-                    R.Ident "stop_sequence";
-                    R.Ident "stop_headsign";
-                    R.Ident "pickup_type";
-                    R.Ident "drop_off_type";]); (* stif *)
+  let read_row = row_select cols [Ident, "trip_id";
+                                  Time, "arrival_time";
+                                  Time, "departure_time";
+                                  Ident, "stop_id";
+                                  Int, "stop_sequence";] in
+  let nc = ref 0 in
   List.iter (fun r ->
-    match r with
-      | R.Int trp :: R.Time arr :: R.Time dep :: R.Int stp :: R.Int seq :: _ ->
-        if Hashtbl.mem trips (string_of_int trp) then
-          Hashtbl.add trip_stops (string_of_int trp) (seq, arr, str stp, dep)
-      | R.Ident trp :: R.Time arr :: R.Time dep :: R.Ident stp :: R.Int seq :: _
-        ->
-        if Hashtbl.mem trips trp then
-          Hashtbl.add trip_stops trp (seq, arr, stp, dep)
+      incr nc;
+      let in_t_wind arr dep = t_from <= dep && arr <= t_to  in
+      match read_row r with
+      | [R.Ident trp; R.Time arr; R.Time dep; R.Ident stp; R.Int seq;] ->
+         if Hashtbl.mem trips trp && in_t_wind arr dep then
+           Hashtbl.add trip_stops trp (seq, arr, stp, dep)
       | r -> wrong_row r
-  ) rows;
+    ) rows;
+  Printf.eprintf "%d connections read\n" !nc;
+  flush stderr;
 
   let eg = EG.create () and lst = LST.create () in
+  let trp_of_conn = Hashtbl.create 100000 in
   Hashtbl.iter (fun trp _ ->
     let stops = Hashtbl.find_all trip_stops trp in
     match List.sort (fun (s, _, _, _) (s', _, _, _) -> s - s') stops with
-      | [] -> assert false
+      | [] -> ()
       | first :: stops ->
         let rec iter (seq, arr, stp, dep) = function
           | [] -> ()
           | (seq', arr', stp', dep' as stop') :: stops ->
             assert (seq < seq' && dep <= arr');
-            EG.add eg (LST.add lst (stp, dep)) 1 (LST.add lst (stp', arr'));
+            let u = LST.add lst (stp, dep) and v = LST.add lst (stp', arr') in
+            EG.add eg u (arr' - dep) v;
+            Hashtbl.add trp_of_conn (u,v) trp;
             iter stop' stops
         in iter first stops
   ) trips;
@@ -214,7 +203,7 @@ let to_graphs gtfs_dir day_date =
   flush stderr;
 
   let igraph eg = G.of_edges ~n_estim:(EG.n eg) (fun f -> EG.iter f eg) in
-  (igraph eg), lst, (igraph trf_eg), trf_ls
+  (igraph eg), lst, (igraph trf_eg), trf_ls, trp_of_conn
 
   
 module Trav = Traversal.Make (G) (GenArray.OfInt) (Traversal.IntWeight)
@@ -273,16 +262,13 @@ module IDicho = GenArray.Dicho (GenArray.OfInt)
     | IDicho.All_bigger -> st_tms.(is).(0)
     | IDicho.Empty -> raise Not_found
               
-let time_expanded_graph (conn, lst, transf, ls) =
+let time_expanded_graph (conn, lst, transf, ls, _) =
 
   let st_tms = stop_times lst ls in
   
   let eg = EG.create () in
   (* Connections : *)
-  G.iter (fun u w v ->
-    let _, t = LST.label lst u and _, t' = LST.label lst v in
-    EG.add eg u (t' - t) v;
-  ) conn;
+  G.iter (EG.add eg) conn;
   (* Wait at stop : *)
   for is = 0 to LS.n ls - 1 do
     let s = LS.label ls is in
@@ -291,12 +277,14 @@ let time_expanded_graph (conn, lst, transf, ls) =
       let t = ref st_tms.(is).(0) in
       for it = 1 to t_end - 1 do
         let t' = st_tms.(is).(it) in
-        EG.add eg (LST.index lst (s,!t)) (t' - !t) (LST.index lst (s,t'));
+        if t' > !t then
+          EG.add eg (LST.index lst (s,!t)) (t' - !t) (LST.index lst (s,t'));
         t := t';
       done;
     end;
   done;
   (* Transfers : *)
+  let trf_edges = Hashtbl.create (G.m transf) in
   let dij = Trav.create (LS.n ls) in
   for is = 0 to LS.n ls - 1 do
     let s = LS.label ls is in
@@ -309,11 +297,13 @@ let time_expanded_graph (conn, lst, transf, ls) =
         let t = st_tms.(is).(it) in
         try
           let t' = next_stop_time ls st_tms s' (t + dt) in
-          EG.add eg (LST.index lst (s,t)) (t' - t) (LST.index lst (s',t'));
+          let u = LST.index lst (s,t) and v = LST.index lst (s',t') in
+          EG.add eg u (t' - t) v;
+          Hashtbl.add trf_edges (u,v) ();
         with Not_found -> () (* no next connection *)
       done;
     done;
     Trav.clear dij;
   done;
   
-  G.of_edges ~n_estim:(EG.n eg) (fun f -> EG.iter f eg)
+  G.of_edges ~n_estim:(EG.n eg) (fun f -> EG.iter f eg), trf_edges
