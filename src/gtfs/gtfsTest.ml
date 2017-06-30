@@ -1,5 +1,6 @@
 (* Laurent Viennot, Inria 2017 *)
 
+exception No_trip
 
 let () =
   Printexc.record_backtrace true ;
@@ -12,10 +13,12 @@ let () =
       t := t'
     in
 
-    let gtfs_dir = Sys.argv.(1) in
-    let day_date = int_of_string Sys.argv.(2) in
-    let t_from = Rows.time_of_string Sys.argv.(3) in
-    let t_to = Rows.time_of_string Sys.argv.(4) in
+    let next_arg = let i = ref 0 in fun () -> incr i; Sys.argv.(!i) in
+    let gtfs_dir = next_arg () in
+    let day_from = int_of_string (next_arg ()) in
+    let t_from = Rows.time_of_string (next_arg ()) in
+    let day_to = int_of_string (next_arg ()) in
+    let t_to = Rows.time_of_string (next_arg ()) in
     
     let module G = Gtfs.G in
     let module EG = Gtfs.EG in
@@ -24,9 +27,72 @@ let () =
     let module R = Rows in
     let module Trav =
           Traversal.Make (G) (GenArray.OfInt) (Traversal.IntWeight) in
+
+    let gtfs = Gtfs.of_dir gtfs_dir day_from t_from day_to t_to in
+
+    (* Get stop sequence for a list of routes : *)
+    let trips_of = Hashtbl.create (Hashtbl.length gtfs.Gtfs.routes) in
+    Hashtbl.iter (fun trp (rid, _, _) ->
+      let l = try Hashtbl.find trips_of rid with Not_found -> [] in
+      Hashtbl.replace trips_of rid (trp :: l);
+    ) gtfs.Gtfs.trips;
+    let liste_rid =
+      let l = ref [] in
+      let f = open_in (next_arg ()) in
+      try
+        while true do
+          l := (input_line f) :: !l
+        done;
+        !l
+      with End_of_file -> !l
+    in
+    List.iter (fun rid ->
+      try
+        let short, long, _, _, _ = Hashtbl.find gtfs.Gtfs.routes rid in
+        Printf.eprintf "Route %s (%s, %s)\n" rid short long; flush stderr;
+        let trips =
+          try Hashtbl.find trips_of rid
+          with Not_found -> raise No_trip in
+        let ls = LS.create () and eg = EG.create () in
+        List.iter (fun trp ->
+            let stops = Hashtbl.find gtfs.Gtfs.stop_times trp in
+            let r, _, dir = Hashtbl.find gtfs.Gtfs.trips trp in
+            assert (r = rid);
+            let stops =
+              if dir <> 0 then (assert(dir = 1); List.rev stops) else stops in
+            let stops = List.map (fun (_,_,s,_,_) -> s) stops in
+            let rec iter = function
+              | s :: s' :: stops ->
+                if s = s' then begin
+                     Printf.eprintf "double_stop: %s %s\n" rid s;
+                   end;
+                 (* assert (s <> s'); *)
+                 if s <> s' then
+                   EG.add eg (LS.add ls s) 1 (LS.add ls s')
+              | _ -> ()
+            in
+            iter stops;
+          ) trips;
+        (* topo sort *)
+        let g = G.of_edges ~n_estim:(LS.n ls) (fun f -> EG.iter f eg) in
+        let trav = Trav.create (G.n g) in
+        let ext = Trav.topological_ordering trav g in
+        let ord = Array.make (G.n g) (-1) in
+        for u = 0 to G.n g - 1 do ord.(ext.(u)) <- u done;
+        for i = 0 to G.n g - 1 do
+          Printf.printf "%s,%d,%s\n" rid i (LS.label ls ord.(i));
+        done;
+      with
+      | Trav.Cycle _ -> Printf.eprintf "cycle: %s\n" rid;
+      | Not_found -> Printf.eprintf "not_found: %s\n" rid;
+      | No_trip -> Printf.eprintf "no_trip: %s\n" rid;
+      ) liste_rid;
     
-    let (conn, lst, transf, ls, edge_trip) as gtfs =
-      Gtfs.to_graphs gtfs_dir day_date t_from t_to in
+    exit 0;
+    
+
+    let (conn, lst, transf, ls, edge_trip, trip_route) as gtfs_graphs =
+      Gtfs.to_graphs gtfs in
     top "gtfs read";
 
     (*let svtx u =
@@ -44,10 +110,10 @@ let () =
       (List.fold_left max 0 ccs);
     top "transfer connected components";
     
-    let g, trf_edges = Gtfs.time_expanded_graph gtfs in
+    let g, trf_edges = Gtfs.time_expanded_graph gtfs_graphs in
     Printf.eprintf "Time expanded graph : n = %d m = %d\n" (G.n g) (G.m g);
     top "time expanded graph";
-    
+
     let dij = Trav.create (G.n g) in
     let arr = Array.make (LS.n ls) max_int in
     let by_trp = Array.make (LS.n ls) "" in
@@ -64,7 +130,7 @@ let () =
     in
     let filter u _ _ v dt _ =
       incr nedg;
-      let trp = try Hashtbl.find edge_trip (u, v) with Not_found -> "" in
+      let trp = try edge_trip (u, v) with Not_found -> "" in
       let (* su, tu = LST.label lst v and *) sv, tv = LST.label lst v in
       let (* iu = LS.index ls su and *) iv = LS.index ls sv in
       let follow =
@@ -80,7 +146,7 @@ let () =
       let src = Random.int (LST.n lst) in
       let s, t = LST.label lst src in
       let nvis = Trav.dijkstra dij g ~filter [src] in
-      Printf.eprintf "    %s,%d : nvis = %d nedg = %d dt_max=%d\n"
+      Printf.eprintf "    %s,%d : nvis = %d  nedg = %d  tmax=%d\n"
         s t nvis !nedg !tmax;
       clear ();
     done;
@@ -92,7 +158,7 @@ let () =
       let src = Random.int (LST.n lst) in
       let s, t = LST.label lst src in
       let nvis = Trav.dijkstra dij g ~filter [src] in
-      Printf.eprintf "    %s,%d : nvis = %d nedg = %d dt_max=%d\n"
+      Printf.eprintf "    %s,%d : nvis = %d  nedg = %d  tmax = %d\n"
         s t nvis !nedg !tmax;
       Skel.of_traversal skel ~alpha:0.5 ~edge_metric:(fun _ _ _ -> 1.) dij;
       Printf.eprintf "Skeleton width = %d, integr width = %f, skel size = %d\n"
@@ -129,7 +195,7 @@ let () =
         let t = st_tms.(is).(it) in
         let ist = LST.index lst (s, t) in
         let _ = Trav.dijkstra dij g ~filter [ist] in
-        (* Printf.eprintf "    %d,%d : nvis = %d nedg = %d dt_max=%d\n"
+        (* Printf.eprintf "    %s,%d : nvis = %d nedg = %d dt_max=%d\n"
           s t nvis !nedg !tmax; *)
         if arr.(id) <> max_int then begin
           let du = LST.index lst (d, arr.(id)) in
@@ -140,6 +206,24 @@ let () =
             uniq_sum := !uniq_sum + List.length path - 1;
           Hashtbl.replace h_path path ();
           let path = Trav.edge_path dij du in
+          (* print some paths : *)
+          (* if s = "StopPoint:59:5231702" && d = "StopPoint:59:4208562" then begin *)
+          if s = "3893342" && d = "4687350" then begin
+              Printf.eprintf "  >";
+              let t = ref 0 in
+              List.iter (fun (u, dt, v) ->
+                  t := !t + dt;
+                  try
+                    let _, short, _, _, _ =
+                      trip_route (edge_trip (u,v)) in
+                    Printf.eprintf " %s" short;
+                  with Not_found ->
+                    if Hashtbl.mem trf_edges (u, v) then Printf.eprintf " -"
+                    else Printf.eprintf " .";
+                ) path;
+              Printf.eprintf " (%ds)\n" !t;
+            end;
+          (* transfer pattern : *)
           let pat = transfers [] path in
           Hashtbl.replace trf_pat pat ();
           trf_pat_sum := !trf_pat_sum + (List.length pat);
