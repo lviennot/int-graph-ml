@@ -63,7 +63,7 @@ let () =
             let r, _, dir = Hashtbl.find gtfs.Gtfs.trips trp in
             assert (r = rid);
             let stops =
-              if dir <> 0 then (assert(dir = 1); List.rev stops) else stops in
+              if dir <> 0 then [] else stops in
             let stops = List.map (fun (_,_,s,_,_) -> s) stops in
             let rec iter = function
               | s :: s' :: stops ->
