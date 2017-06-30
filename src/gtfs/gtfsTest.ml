@@ -38,13 +38,17 @@ let () =
     ) gtfs.Gtfs.trips;
     let liste_rid =
       let l = ref [] in
-      let f = open_in (next_arg ()) in
       try
+        let f = open_in (next_arg ()) in
         while true do
           l := (input_line f) :: !l
         done;
         !l
-      with End_of_file -> !l
+      with
+      | End_of_file -> !l
+      | Invalid_argument _ ->
+         Hashtbl.iter (fun rid _ -> l := rid :: !l) gtfs.Gtfs.routes;
+         !l
     in
     List.iter (fun rid ->
       try

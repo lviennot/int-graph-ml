@@ -56,10 +56,10 @@ end with type weight = WgtArr.elt = struct
 
   let vtx_cmp u v = u - v
 
-  let of_edges ?(n_estim=16) iter =
+  let of_edges ?(n_estim=0) iter =
 
     (* Degrees : *)
-    let n = ref 0 in
+    let n = ref n_estim in
     let deg = ref (L.create n_estim) and dft_wgt = ref None in
     iter (fun u w v ->
       if !dft_wgt = None then dft_wgt := Some w ;

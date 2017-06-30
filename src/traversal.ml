@@ -202,11 +202,14 @@ struct
       
   exception Cycle of G.vertex * G.vertex
 
+  (* Returns a path from [v] to [u] when [uv] is a back edge. *)
   let cycle t u v =
     let rec iter acc u' =
       let acc = u' :: acc in
-      if u' = t.parent.(u') then u' :: acc else (* TODO RM assert (u' <> t.parent.(u')); (* no cycle in that case! *)*)
-      if u' = v then acc else iter acc t.parent.(u')
+      if u' = v then acc else begin
+          assert (u' <> t.parent.(u')); (* no cycle otherwise ! *)
+          iter acc t.parent.(u')
+        end
     in
     iter [] u
                    
@@ -245,9 +248,9 @@ struct
     
     (t.visit_nb - last_visit_nb)
 
-  (** Returns a linear extension [e] (associated to a topological ordering) of
-  [g] vertices sucht that [uv] in [E(g)] implies [e.(u) < e.(v)]. *)
-  let dag_extension t g =
+  (** Returns a topological ordering [ord] of a dag [g], i.e. an ordering
+      such that for [uv] in [E(g)], [u] appears before [v] in [ord]. *)
+  let topological_ordering t g =
     clear t;
     let n = G.n g in
     for u = 0 to n - 1 do
@@ -258,12 +261,15 @@ struct
           Printf.eprintf "Cycle: ";
           List.iter (fun u ->
               Printf.eprintf "%d %d %d\n" u t.visit_time.(u) t.visit_end.(u)
-            ) (v :: cycle t u v);
+            ) (u :: cycle t u v);
           Printf.eprintf "%d\n" v;
-          failwith "Graph is not a dag!"
+          (* failwith *) Printf.eprintf "Graph is not a dag!\n";
+          raise (Cycle (u, v))
       end
     done;
-    Array.init n (fun u -> n - 1 - t.visit_end.(u))
+    let ord = Array.make n (-1) in
+    for u = 0 to n - 1 do ord.(n - 1 - t.visit_end.(u)) <- u done;
+    ord
 
 
   (** Returns the height of each node in the partial order resulting from
@@ -271,7 +277,7 @@ struct
   let dag_height t g =
     let n = G.n g in
     let h = Array.make n 0 in
-    let ord = dag_extension t g in
+    let ord = topological_ordering t g in
     for i = 0 to n - 1 do
       let u = ord.(i) in
       let hu1 = h.(u) + 1 in
