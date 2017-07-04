@@ -13,12 +13,16 @@ let () =
       t := t'
     in
 
-    let next_arg = let i = ref 0 in fun () -> incr i; Sys.argv.(!i) in
+    let i_arg = ref 0 in
+    let next_arg () = incr i_arg; Sys.argv.(!i_arg) in
+    let undo_arg () = decr i_arg in
     let gtfs_dir = next_arg () in
     let day_from = int_of_string (next_arg ()) in
     let t_from = Rows.time_of_string (next_arg ()) in
     let day_to = int_of_string (next_arg ()) in
     let t_to = Rows.time_of_string (next_arg ()) in
+
+    (try Printf.eprintf "next_arg = %s\n"(next_arg ()); undo_arg () with _->());
     
     let module G = Gtfs.G in
     let module EG = Gtfs.EG in
@@ -30,35 +34,36 @@ let () =
 
     let gtfs = Gtfs.of_dir gtfs_dir day_from t_from day_to t_to in
 
-    (* Get stop sequence for a list of routes : *)
-    let trips_of = Hashtbl.create (Hashtbl.length gtfs.Gtfs.routes) in
-    Hashtbl.iter (fun trp (rid, _, _) ->
-      let l = try Hashtbl.find trips_of rid with Not_found -> [] in
-      Hashtbl.replace trips_of rid (trp :: l);
-    ) gtfs.Gtfs.trips;
-    let liste_rid =
-      let l = ref [] in
-      try
-        let f = open_in (next_arg ()) in
-        while true do
-          l := (input_line f) :: !l
-        done;
-        !l
-      with
-      | End_of_file -> !l
-      | Invalid_argument _ ->
-         Hashtbl.iter (fun rid _ -> l := rid :: !l) gtfs.Gtfs.routes;
-         !l
-    in
-    List.iter (fun rid ->
-      try
-        let short, long, _, _, _ = Hashtbl.find gtfs.Gtfs.routes rid in
-        Printf.eprintf "Route %s (%s, %s)\n" rid short long; flush stderr;
-        let trips =
-          try Hashtbl.find trips_of rid
-          with Not_found -> raise No_trip in
-        let ls = LS.create () and eg = EG.create () in
-        List.iter (fun trp ->
+    if try next_arg() = "routes_seq" with _ -> false then begin
+      (* Get stop sequence for a list of routes : *)
+      let trips_of = Hashtbl.create (Hashtbl.length gtfs.Gtfs.routes) in
+      Hashtbl.iter (fun trp (rid, _, _) ->
+        let l = try Hashtbl.find trips_of rid with Not_found -> [] in
+        Hashtbl.replace trips_of rid (trp :: l);
+      ) gtfs.Gtfs.trips;
+      let liste_rid =
+        let l = ref [] in
+        try
+          let f = open_in (next_arg ()) in
+          while true do
+            l := (input_line f) :: !l
+          done;
+          !l
+        with
+          | End_of_file -> !l
+          | Invalid_argument _ ->
+            Hashtbl.iter (fun rid _ -> l := rid :: !l) gtfs.Gtfs.routes;
+            !l
+      in
+      List.iter (fun rid ->
+        try
+          let short, long, _, _, _ = Hashtbl.find gtfs.Gtfs.routes rid in
+          Printf.eprintf "Route %s (%s, %s)\n" rid short long; flush stderr;
+          let trips =
+            try Hashtbl.find trips_of rid
+            with Not_found -> raise No_trip in
+          let ls = LS.create () and eg = EG.create () in
+          List.iter (fun trp ->
             let stops = Hashtbl.find gtfs.Gtfs.stop_times trp in
             let r, _, dir = Hashtbl.find gtfs.Gtfs.trips trp in
             assert (r = rid);
@@ -68,32 +73,32 @@ let () =
             let rec iter = function
               | s :: s' :: stops ->
                 if s = s' then begin
-                     Printf.eprintf "double_stop: %s %s\n" rid s;
-                   end;
+                  Printf.eprintf "double_stop: %s %s\n" rid s;
+                end;
                  (* assert (s <> s'); *)
-                 if s <> s' then
-                   EG.add eg (LS.add ls s) 1 (LS.add ls s')
+                if s <> s' then
+                  EG.add eg (LS.add ls s) 1 (LS.add ls s')
               | _ -> ()
             in
             iter stops;
           ) trips;
         (* topo sort *)
-        let g = G.of_edges ~n_estim:(LS.n ls) (fun f -> EG.iter f eg) in
-        let trav = Trav.create (G.n g) in
-        let ext = Trav.topological_ordering trav g in
-        let ord = Array.make (G.n g) (-1) in
-        for u = 0 to G.n g - 1 do ord.(ext.(u)) <- u done;
-        for i = 0 to G.n g - 1 do
-          Printf.printf "%s,%d,%s\n" rid i (LS.label ls ord.(i));
-        done;
-      with
-      | Trav.Cycle _ -> Printf.eprintf "cycle: %s\n" rid;
-      | Not_found -> Printf.eprintf "not_found: %s\n" rid;
-      | No_trip -> Printf.eprintf "no_trip: %s\n" rid;
+          let g = G.of_edges ~n_estim:(LS.n ls) (fun f -> EG.iter f eg) in
+          let trav = Trav.create (G.n g) in
+          let ext = Trav.topological_ordering trav g in
+          let ord = Array.make (G.n g) (-1) in
+          for u = 0 to G.n g - 1 do ord.(ext.(u)) <- u done;
+          for i = 0 to G.n g - 1 do
+            Printf.printf "%s,%d,%s\n" rid i (LS.label ls ord.(i));
+          done;
+        with
+          | Trav.Cycle _ -> Printf.eprintf "cycle: %s\n" rid;
+          | Not_found -> Printf.eprintf "not_found: %s\n" rid;
+          | No_trip -> Printf.eprintf "no_trip: %s\n" rid;
       ) liste_rid;
-    
-    exit 0;
-    
+      top "routes seq";
+      exit 0;
+    end else undo_arg();
 
     let (conn, lst, transf, ls, edge_trip, trip_route) as gtfs_graphs =
       Gtfs.to_graphs gtfs in
@@ -118,6 +123,15 @@ let () =
     Printf.eprintf "Time expanded graph : n = %d m = %d\n" (G.n g) (G.m g);
     top "time expanded graph";
 
+    if try next_arg() = "projection" with _ -> false then begin
+      G.iter (fun u w v ->
+        let u, _ = LST.label lst u and v, _ = LST.label lst v in
+        if u <> v then Printf.printf "a %s %s %d\n" u v w;
+      ) g;
+      top "projection graph";
+      exit 0;
+    end else undo_arg();
+    
     let dij = Trav.create (G.n g) in
     let arr = Array.make (LS.n ls) max_int in
     let by_trp = Array.make (LS.n ls) "" in
@@ -261,7 +275,7 @@ let () =
           all_trf_pat_nb := !all_trf_pat_nb + (Hashtbl.length trf_pat);
         end;
     done;
-    Printf.printf
+    Printf.eprintf
       "avg_nb_path = %d  avg_nb_wgt_path = %d avg_nb_trf_pat = %d\n"
       (!all_path_nb / n_iter) (!all_wgt_path_nb / n_iter)
       (!all_trf_pat_nb / n_iter);

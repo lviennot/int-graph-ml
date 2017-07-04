@@ -101,12 +101,16 @@ module Day = struct
                  
 end
 
-type col_type = Ident | String | Int | IntDefault of int | Float | Time
+type col_type = Ident | IdentDefault of string
+                | String | Int | IntDefault of int
+                | Float | FloatDefault of float | Time
 
 let string_of_col_type = function
-  | Ident -> "Ident" | String -> "String"
+  | Ident -> "Ident" | IdentDefault dft -> Printf.sprintf "IdentDefault(%s)" dft
+  | String -> "String"
   | Int -> "Int" | IntDefault dft -> Printf.sprintf "IntDefault(%d)" dft
-  | Float -> "Float" | Time -> "Time"
+  | Float -> "Float" | FloatDefault dft -> Printf.sprintf "FloatDefault(%f)" dft
+  | Time -> "Time"
 
 let row_select first_row sel =
   let cells = Array.make (List.length sel) R.Empty in
@@ -118,6 +122,7 @@ let row_select first_row sel =
       try to_sel.(List.assoc c cols) <- i, c, typ
       with Not_found ->
         match typ with
+        | IdentDefault dft -> default := (i, R.Ident dft) :: !default
         | IntDefault dft -> default := (i, R.Int dft) :: !default
         | _ -> failwith (Printf.sprintf "missing field : %s" c)
     ) sel;
@@ -126,14 +131,23 @@ let row_select first_row sel =
     | Ident, R.Ident _ -> cell
     | Ident, R.Int i -> R.Ident (string_of_int i)
     | Ident, R.Float f -> R.Ident (string_of_float f)
+    | IdentDefault _, R.Ident _ -> cell
+    | IdentDefault _, R.Int i -> R.Ident (string_of_int i)
+    | IdentDefault _, R.Float f -> R.Ident (string_of_float f)
+    | IdentDefault dft, R.Empty -> R.Ident dft
     | String, R.String _ -> cell
     | String, R.Ident s -> R.String s
     | String, R.Int i -> R.String (string_of_int i)
     | String, R.Float f -> R.String (string_of_float f)
+    | String, R.Empty -> R.String ""
     | Int, R.Int _ -> cell
-    | Int, R.Empty -> R.Int 0
+    (* TODO RM ? | Int, R.Empty -> R.Int 0 *)
+    | IntDefault dft, R.Empty -> R.Int dft
     | IntDefault _, R.Int _ -> cell
     | Float, R.Float _ -> cell
+    | Float, R.Int i -> R.Float (float_of_int i)
+    | FloatDefault dft, R.Empty -> R.Float dft
+    | FloatDefault _, R.Float _ -> cell
     | Time, R.Time _ -> cell
     | _ -> failwith (Printf.sprintf "Gtfs: bad %s cell (%s) : %s"
                        col (string_of_col_type typ) (R.cell_to_string cell))
@@ -237,10 +251,11 @@ let of_dir gtfs_dir day_from t_from day_to t_to =
 
   let trips = Hashtbl.create 16 in
   let cols, rows = R.read gtfs_dir "trips.txt" in
-  let read_row = row_select cols [Ident, "route_id";
-                                  Ident, "service_id";
-                                  Ident, "trip_id";
-                                  Int, "direction_id"] in
+  let read_row =
+    row_select cols [Ident, "route_id";
+                     IdentDefault "12533", "service_id"; (* TODO RM *)
+                     Ident, "trip_id";
+                     IntDefault 0, "direction_id"] in
   List.iter (fun r ->
       match read_row r with
       | [R.Ident rte; R.Ident srv; R.Ident trp; R.Int dir;] ->
@@ -255,14 +270,15 @@ let of_dir gtfs_dir day_from t_from day_to t_to =
   let read_row = row_select cols [Ident, "route_id";
                                   String, "route_short_name";
                                   String, "route_long_name";
-                                  Int, "route_type";
-                                  String, "route_color";
-                                  String, "route_text_color";] in
+                                  IntDefault 0, "route_type";
+                                  (* String, "route_color";
+                                  String, "route_text_color"; *)] in
   List.iter (fun r ->
       match read_row r with
       | [R.Ident rid; R.String short_name; R.String long_name;
-         R.Int typ; R.String color; R.String text_color;] ->
-         Hashtbl.add routes rid (short_name, long_name, typ, color, text_color);
+         R.Int typ; (* R.String color; R.String text_color; *)] ->
+        Hashtbl.add routes rid (short_name, long_name, typ,
+                                "", ""(* color, text_color *));
       | r -> wrong_row r
     ) rows;
   Printf.eprintf "%d routes\n" (Hashtbl.length routes);
@@ -272,8 +288,8 @@ let of_dir gtfs_dir day_from t_from day_to t_to =
   let cols, rows = R.read gtfs_dir "stops.txt" in
   let read_row = row_select cols [Ident, "stop_id";
                                   String, "stop_name";
-                                  Float, "stop_lat";
-                                  Float, "stop_lon";] in
+                                  FloatDefault 0., "stop_lat";
+                                  FloatDefault 0., "stop_lon";] in
   List.iter (fun r ->
       match read_row r with
         | [R.Ident s; R.String name; R.Float lat; R.Float lon] ->
@@ -395,15 +411,16 @@ let to_graphs gtfs =
    let rec iter d = function
      | (arr, drp, stp, dep, pck) :: (arr', drp', stp', dep', pck' as s')
        :: stops ->
-        assert (dep <= arr'); (* sometimes equal *)
-        let arr' = Day.time d arr' and dep = Day.time d dep in
-        let u = LST.add lst (stp, dep)
-        and v = LST.add lst (stp', arr') in
-        assert (drp <> 1 && pck <> 1 && drp' <> 1 && pck' <> 1);
-        EG.add eg u (arr' - dep) v;
-        if arr' - dep > !conn_max then conn_max := arr' - dep;
-        Hashtbl.add trp_of_conn (u,v) trp;
-        iter d (s' :: stops)
+         assert (dep <= arr'); (* sometimes equal *)
+         let arr' = if dep = arr' then dep + 30 else arr' in (* TODO pb of minute precision *)
+         let arr' = Day.time d arr' and dep = Day.time d dep in
+         let u = LST.add lst (stp, dep)
+         and v = LST.add lst (stp', arr') in
+         assert (drp <> 1 && pck <> 1 && drp' <> 1 && pck' <> 1);
+         EG.add eg u (arr' - dep) v;
+         if arr' - dep > !conn_max then conn_max := arr' - dep;
+         Hashtbl.add trp_of_conn (u,v) trp;
+         iter d (s' :: stops)
      | _ -> ()
    in 
    List.iter (fun d -> iter d stops) days;

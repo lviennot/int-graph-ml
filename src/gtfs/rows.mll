@@ -23,7 +23,7 @@ let fail_at lexbuf msg =
 let space = [' ' '\t']*
 let eol = ('\r'? '\n' | '\n'? '\r')    
 let digit = ['0'-'9']
-let identchar = ['a'-'z' 'A'-'Z' '_' '0'-'9' ':' '-' '+']
+let identchar = [ ^ '\t' '\r' '\n' ',' '"']
 let dquote = '"'
 let string = [ ^'"' ]*
 let coma = ','
@@ -31,14 +31,14 @@ let colon = ':'
   
 rule token = parse
 | space+ { token lexbuf }
-| (digit digit as h) colon (digit digit as m) colon (digit digit as s)
+| (digit? digit as h) colon (digit digit as m) colon (digit digit as s)
     { let i = int_of_string in Cell (Time (3600 * (i h) + 60 * (i m) + (i s))) }
 | (digit+ '.' digit* as w) { Cell (Float (float_of_string w)) } 
 | digit+ as w { Cell (Int (int_of_string w)) }
 | identchar+ as w { Cell (Ident w) }
 | dquote (string as w) dquote { Cell (String w) }
 | coma { Coma }
-| eol { Eol }
+| eol { new_line lexbuf; Eol }
 | eof { Eof }
 | (_ as c) { failwith (Printf.sprintf "Rows.token: unexpected char: '%c'" c) }
 

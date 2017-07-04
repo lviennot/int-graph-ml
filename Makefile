@@ -104,10 +104,10 @@ gtfs_ratp: ../../dev/ratp/_gtfs_ratp gtfsTest.native
 	./gtfsTest.native $< 20170606  $(T1) $(T2)
 
 gtfs_stif: ../../dev/ratp/_gtfs_stif gtfsTest.native
-	./gtfsTest.native $< 20170619 00:00:00 20170630 26:00:00 ../../dev/ratp/_liste-route_clean.txt > /tmp/routes_seq.txt
+	./gtfsTest.native $< 20170626 $(T1) 20170626 $(T2) projection | gzip -c > /tmp/proj.gr.gz
 
 %.gtfs_routes_seq: gtfsTest.native
-	./gtfsTest.native $* 20010101 00:00:00 30000101 26:00:00 > routes_seq.txt 2> errors.txt
+	./gtfsTest.native $* 20010101 00:00:00 30000101 26:00:00 routes_seq > routes_seq.txt 2> errors.txt
 
 /tmp/_gtfs_stif:
 	mkdir -p $@
