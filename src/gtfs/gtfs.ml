@@ -253,7 +253,7 @@ let of_dir gtfs_dir day_from t_from day_to t_to =
   let cols, rows = R.read gtfs_dir "trips.txt" in
   let read_row =
     row_select cols [Ident, "route_id";
-                     IdentDefault "12533", "service_id"; (* TODO RM *)
+                     IdentDefault "11375", "service_id"; (* TODO RM *)
                      Ident, "trip_id";
                      IntDefault 0, "direction_id"] in
   List.iter (fun r ->
