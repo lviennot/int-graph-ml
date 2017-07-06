@@ -19,12 +19,18 @@ sig
   val iter_succ : (vertex -> unit) -> t -> vertex -> unit
   val iter_wgt_succ : (weight -> vertex -> unit) -> t -> vertex -> unit
   val iter : (vertex -> weight -> vertex -> unit) -> t -> unit
+  val fold : ('a -> vertex -> weight -> vertex -> 'a) -> 'a -> t -> 'a
   val no_vertex : vertex
 
   val sort : t -> t
   val sorted_of_edges : ?n_estim:int ->
     ((vertex -> weight -> vertex -> unit) -> unit) -> t
   val mem_edge : t -> vertex -> vertex -> bool
+  val weight_edge : t -> vertex -> vertex -> weight
+
+  val simple : (weight -> weight -> weight) -> t -> t
+  val filter : (vertex -> weight -> vertex -> bool) -> t -> t
+  val unweighted : weight -> t -> t
 
   type edge = int
   val iter_out_edges : (edge -> unit) -> t -> vertex -> unit
@@ -114,6 +120,15 @@ end with type weight = WgtArr.elt = struct
       done
     done
 
+  let fold f a g =
+    let a = ref a in
+    for u = 0 to g.n - 1 do
+      for e = L.get g.sdeg u to L.get g.sdeg (u+1) - 1 do
+        a := f !a u (W.get g.wgt e) (I.get g.dst e)
+      done
+    done;
+    !a
+
   (** Vertex sorted adjacency lists. *)
       
   let reverse g =
@@ -128,6 +143,35 @@ end with type weight = WgtArr.elt = struct
     let rev = of_edges ~n_estim (fun f -> iter (fun u w v -> f v w u)) in
     reverse rev (* reverse is equivalent to bucket sorting *)
 
+  let simple aggreg_commut g =
+    let g = sort g in
+    if g.m = 0 then g else
+    let w_dum = W.get g.wgt 0 in
+    let rec iter u e w_prev v_prev f =
+      let f_prev () = if v_prev <> no_vertex then f u w_prev v_prev in
+      if u < g.n then begin
+          let u, e, w_prev, v_prev =
+            if e >= L.get g.sdeg (u+1) then
+              (f_prev (); (u+1), e, w_dum, no_vertex)
+            else
+              let w = W.get g.wgt e and v = I.get g.dst e in
+              if v <> v_prev then
+                (f_prev (); u, e+1, w, v)
+              else 
+                u, e+1, aggreg_commut w_prev w, v
+          in
+          iter u e w_prev v_prev f
+        end
+    in of_edges ~n_estim:g.n (iter 0 (L.get g.sdeg 0) w_dum no_vertex)
+    
+  let unweighted one g =
+    of_edges ~n_estim:g.n (fun f -> iter (fun u _ v -> f u one v) g)
+
+  let filter pred g =
+    of_edges ~n_estim:g.n (fun f ->
+               iter (fun u w v -> if pred u w v then f u w v) g
+             )
+    
 
   module IDicho = GenArray.Dicho (I)
     

@@ -226,6 +226,7 @@ let of_dir gtfs_dir day_from t_from day_to t_to =
            end
       | r -> wrong_row r
   ) rows;
+  Printf.eprintf "%d services\n" (Hashtbl.length services); flush stderr;
   (* exceptions : *)
   let cols, rows = R.read gtfs_dir "calendar_dates.txt" in
   let read_row = row_select cols [Ident, "service_id";
@@ -241,7 +242,7 @@ let of_dir gtfs_dir day_from t_from day_to t_to =
              if exc = 1 then d :: days
              else if exc = 2
              then List.filter (fun d' -> Day.compare d d' <> 0) days
-             else failwith "Bad format: exception not in {0,1}."
+             else failwith "Bad format: exception_type not in {0,1}."
            in
            Hashtbl.replace services srv days
          end
@@ -253,7 +254,7 @@ let of_dir gtfs_dir day_from t_from day_to t_to =
   let cols, rows = R.read gtfs_dir "trips.txt" in
   let read_row =
     row_select cols [Ident, "route_id";
-                     IdentDefault "11375", "service_id"; (* TODO RM *)
+                     IdentDefault "2017-06-22", "service_id"; (* TODO RM *)
                      Ident, "trip_id";
                      IntDefault 0, "direction_id"] in
   List.iter (fun r ->

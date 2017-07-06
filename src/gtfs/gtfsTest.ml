@@ -69,14 +69,17 @@ let () =
             assert (r = rid);
             let stops =
               if dir <> 0 then [] else stops in
-            let stops = List.map (fun (_,_,s,_,_) -> s) stops in
+            let stops = List.map (fun (arr,_,s,dep,_) -> s,(arr+dep)/2) stops in
             let rec iter = function
-              | s :: s' :: stops ->
+              | (s,t) :: (s',t') :: stops ->
                 if s = s' then begin
                   Printf.eprintf "double_stop: %s %s\n" rid s;
                 end;
+                if abs (t - t') <= 20 then begin
+                  Printf.eprintf "short conn: %s %s %d\n" rid s (abs (t - t'));
+                end;
                  (* assert (s <> s'); *)
-                if s <> s' then
+                if s <> s' && abs (t - t') > 20 then
                   EG.add eg (LS.add ls s) 1 (LS.add ls s')
               | _ -> ()
             in
@@ -84,17 +87,36 @@ let () =
           ) trips;
         (* topo sort *)
           let g = G.of_edges ~n_estim:(LS.n ls) (fun f -> EG.iter f eg) in
-          let trav = Trav.create (G.n g) in
-          let ext = Trav.topological_ordering trav g in
-          let ord = Array.make (G.n g) (-1) in
-          for u = 0 to G.n g - 1 do ord.(ext.(u)) <- u done;
-          for i = 0 to G.n g - 1 do
-            Printf.printf "%s,%d,%s\n" rid i (LS.label ls ord.(i));
-          done;
+          let g = G.unweighted 1 g in
+          let g = G.simple (+) g in
+          let m = max 1 (G.m g) in
+          let avg = (G.fold (fun s _ w _ -> s + w) 0 g) / m in
+          let min = G.fold (fun m _ w _ -> min m w) max_int g in
+          Printf.eprintf "stat_mult_edg: avg=%d min=%d\n" avg min;
+          let threshold =
+            if avg >= 10 then avg / 2 + 1
+            else if avg >= 7 then 5
+            else if avg >= 5 then 4
+            else avg
+          in
+          let g = G.filter (fun _ w _ -> w >= threshold) g in
+          (try
+             let trav = Trav.create (G.n g) in
+             let ext = Trav.topological_ordering trav g in
+             let ord = Array.make (G.n g) (-1) in
+             for u = 0 to G.n g - 1 do ord.(ext.(u)) <- u done;
+             for i = 0 to G.n g - 1 do
+               Printf.printf "%s,%d,%s\n" rid i (LS.label ls ord.(i));
+             done;
+           with
+             Trav.Cycle (u,v) ->
+             let nb u v = try G.weight_edge g u v with _ -> 0 in
+             Printf.eprintf "cycle: %s nb_fwd=%d nb_bkd=%d\n"
+                            rid (nb u v) (nb v u)
+          )
         with
-          | Trav.Cycle _ -> Printf.eprintf "cycle: %s\n" rid;
-          | Not_found -> Printf.eprintf "not_found: %s\n" rid;
-          | No_trip -> Printf.eprintf "no_trip: %s\n" rid;
+        | Not_found -> Printf.eprintf "not_found: %s\n" rid
+        | No_trip -> Printf.eprintf "no_trip: %s\n" rid
       ) liste_rid;
       top "routes seq";
       exit 0;
