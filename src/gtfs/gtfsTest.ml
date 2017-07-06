@@ -75,11 +75,11 @@ let () =
                 if s = s' then begin
                   Printf.eprintf "double_stop: %s %s\n" rid s;
                 end;
-                if abs (t - t') <= 20 then begin
+                if abs (t - t') <= 60 then begin
                   Printf.eprintf "short conn: %s %s %d\n" rid s (abs (t - t'));
                 end;
                  (* assert (s <> s'); *)
-                if s <> s' && abs (t - t') > 20 then
+                if s <> s' && abs (t - t') > 60 then
                   EG.add eg (LS.add ls s) 1 (LS.add ls s')
               | _ -> ()
             in
